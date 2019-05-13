@@ -171,6 +171,9 @@ int main(int argc, char **argv) {
 
   // Get CLUT name from command line (must be one defined in 'gmic_cluts.txt').
   const char *const name = cimg_option("-i","summer","CLUT name");
+  const unsigned int s = (unsigned int)std::strlen(name);
+  char *filename = (char*)std::malloc(s+8);
+  std::memcpy(filename,name,s);
 
   // Get CLUT resolution from command line, higher is slower.
   const unsigned int resolution = (unsigned int)cimg_option("-r",64,"CLUT resolution");
@@ -188,14 +191,61 @@ int main(int argc, char **argv) {
   if (index==~0U) throw CImgException("Specified CLUT name '%s' has not been found.",name);
 
   // Decompress requested CLUT from its set of keypoints.
-  CImg<unsigned char> keypoints = clut_data.rows(2*index,2*index+1).get_split('y').get_append('c').permute_axes("cxyz");     // Reorganize keypoints data as a 6xN scalar image
+  CImg<unsigned char> keypoints_raw = clut_data.rows(2*index,2*index+1);
+  CImg<unsigned char> keypoints = keypoints_raw.get_split('y').get_append('c').permute_axes("cxyz");     // Reorganize keypoints data as a 6xN scalar image
   cimg_forY(keypoints,y) if (y && !keypoints(0,y) && !keypoints(1,y) && !keypoints(2,y)) { keypoints.rows(0,y - 1); break; } // Keep only significant keypoints
   float *const output_clut_data = new float[3*resolution*resolution*resolution]; // Output buffer for the CLUT data
+//  std::printf("nb of keypoints %d\n", keypoints.size()/6);
+//  for (int i = 0; i < keypoints.size(); i+=6)
+//    std::printf("kp2clut %4d: %d,%d,%d  %d,%d,%d\n", i/6,keypoints[i], keypoints[i+1], keypoints[i+2], keypoints[i+3], keypoints[i+4], keypoints[i+5]);
 
   cimg::tic(); // Init tic/toc to display computation time
   decompress_clut(keypoints.data(),keypoints.size()/6,resolution,output_clut_data);
   cimg::toc();
 
+//  std::printf("clut 3d size %d\n", resolution);
+  std::memcpy(&filename[s],".png",4);
+  filename[s+4] = '\0';
+  const unsigned int res2d = (unsigned int)std::floor(std::sqrt(resolution*resolution*resolution));
+  CImg<unsigned char> clut2d = CImg<float>(output_clut_data,res2d,res2d,1,3);
+  clut2d.save(filename, -1);
+/*
+  for (int i=0;i<3*resolution*resolution*resolution;i+=3)
+   std::printf(" exp clut %5d: %.2f, %.2f, %.2f\n", i/3,
+    (float)clut2d[i]/255,(float)clut2d[i+1]/255,(float)clut2d[i+2]/255);
+
+// raw copy of compressed lines
+  std::memcpy(&filename[s],"-cl.png",7);
+  filename[s+7] = '\0';
+  clut2d = CImg<unsigned char>(keypoints_raw,keypoints_raw.size()/6,2,1,3);
+  clut2d.save(filename, -1);
+
+  for (int i = 0; i < keypoints_raw.size(); i+=3)
+     std::printf("kp raw %4d: %d,%d,%d\n", i,
+      keypoints_raw[i], keypoints_raw[i+1], keypoints_raw[i+2]);
+*/
+
+// shortened copy of compressed lines
+  std::memcpy(&filename[s],"-c.png",6);
+  filename[s+6] = '\0';
+  keypoints.permute_axes("yzcx"); //.get_split('x').get_append('y');
+  CImgList<unsigned char> kp_split;
+  keypoints.get_channel(0).move_to(kp_split);
+  keypoints.get_channel(3).move_to(kp_split);
+  keypoints.get_channel(1).move_to(kp_split);
+  keypoints.get_channel(4).move_to(kp_split);
+  keypoints.get_channel(2).move_to(kp_split);
+  keypoints.get_channel(5).move_to(kp_split);
+  keypoints = kp_split.get_append('c');
+//  for (int i = 0; i < keypoints.size(); i+=3)
+//    std::printf("kp permut %4d: %d,%d,%d\n", i,
+//      keypoints[i], keypoints[i+1], keypoints[i+2]);
+
+  clut2d = CImg<unsigned char>(keypoints,keypoints.size()/6,2,1,3);
+  clut2d.save(filename, -1);
+
+  std::free(filename);
+/*
   // Visualize CLUT as a 3D image.
   const CImg<float> clut3d = CImg<float>(output_clut_data,resolution,resolution,resolution,3,true);
   clut3d.display("3D CLUT");
@@ -204,6 +254,6 @@ int main(int argc, char **argv) {
   const unsigned int res2d = (unsigned int)std::floor(std::sqrt(resolution*resolution*resolution));
   const CImg<float> clut2d = CImg<float>(output_clut_data,res2d,res2d,1,3);
   clut2d.display("2D HaldCLUT");
-
+*/
   return 0;
 }
